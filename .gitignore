@@ -1,5 +1,10 @@
 __pycache__/
 *.pyc
-uploads/
-data/
+*.pyo
 .env
+uploads/
+instance/
+data/
+.ruff_cache/
+.pytest_cache/
+.venv
