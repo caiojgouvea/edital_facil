@@ -46,6 +46,9 @@ Regras:
 - Use null (não string vazia) quando não encontrar a informação
 - Para vagas, inclua CR no campo "vagas" quando houver cadastro de reserva (ex: "5 + CR"), \
 mas em "vagas_numero" coloque apenas o número inteiro
+- Para data_prova, use a data da prova objetiva/escrita (primeira prova). Se a data estiver por \
+extenso ("24 de maio de 2026"), converta para DD/MM/AAAA. Ignore "data provável" como incerteza — \
+extraia o valor mesmo assim
 - Para salário, procure por: "vencimento", "vencimento inicial", "remuneração", "subsídio" seguido \
 de valor em reais. Formate "salario" como "R$ X.XXX,XX" e "salario_valor" como número float
 - Para escolaridade, procure por: "ensino superior", "ensino médio", "graduação em", "diploma de", \
