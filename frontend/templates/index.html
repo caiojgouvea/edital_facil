@@ -131,7 +131,7 @@
 
       const linhas = cargos.map(c => `
         <tr>
-          <td>${val(c.area)}</td>
+          <td><span class="badge bg-secondary">${val(c.area)}</span></td>
           <td>${val(c.vagas)}</td>
           <td class="text-muted" style="font-size:.875rem">${val(c.escolaridade)}</td>
         </tr>`).join("");
