@@ -17,15 +17,24 @@ explicações.
 
 Estrutura esperada:
 {{
-  "cidade_estado": "Cidade/UF ou null",
+  "municipio": "Nome do município ou null",
+  "uf": "Sigla do estado com 2 letras (ex: SC) ou null",
+  "orgao": "Nome do órgão ou entidade realizadora (ex: TCE-SC, Câmara Municipal) ou null",
+  "banca": "Nome da banca organizadora (ex: CESPE, FGV, VUNESP) ou null",
   "data_prova": "DD/MM/AAAA ou null",
-  "periodo_inscricao": "DD/MM/AAAA a DD/MM/AAAA ou null",
+  "data_prova_iso": "YYYY-MM-DD ou null",
+  "inscricao_inicio": "DD/MM/AAAA ou null",
+  "inscricao_inicio_iso": "YYYY-MM-DD ou null",
+  "inscricao_fim": "DD/MM/AAAA ou null",
+  "inscricao_fim_iso": "YYYY-MM-DD ou null",
   "cargos": [
     {{
       "nome": "nome do cargo",
       "area": "área de habilitação ou null",
       "salario": "R$ valor ou null",
+      "salario_valor": numero em float ou null,
       "vagas": "número + CR ou somente número ou null",
+      "vagas_numero": numero inteiro (ignorar CR) ou null,
       "escolaridade": "nível exigido ou null",
       "beneficios": "um benefício por linha no formato Nome: R$ valor, ou null"
     }}
@@ -35,14 +44,15 @@ Estrutura esperada:
 Regras:
 - Se um cargo tiver múltiplas áreas de habilitação, crie um item por área
 - Use null (não string vazia) quando não encontrar a informação
-- Para vagas, inclua CR quando houver cadastro de reserva (ex: "5 + CR")
+- Para vagas, inclua CR no campo "vagas" quando houver cadastro de reserva (ex: "5 + CR"), \
+mas em "vagas_numero" coloque apenas o número inteiro
 - Para salário, procure por: "vencimento", "vencimento inicial", "remuneração", "subsídio" seguido \
-de valor em reais. Formate sempre como "R$ X.XXX,XX"
+de valor em reais. Formate "salario" como "R$ X.XXX,XX" e "salario_valor" como número float
 - Para escolaridade, procure por: "ensino superior", "ensino médio", "graduação em", "diploma de", \
 "bacharel em", "nível superior". Inclua a área quando especificada
 - Para benefícios, liste um por linha: auxílio-alimentação, auxílio-saúde, vale-transporte, etc.
 - Se o salário for igual para todas as áreas de habilitação de um cargo, repita-o em cada item
-- cidade_estado no formato "Cidade/UF" (ex: "Florianópolis/SC")
+- "orgao" é quem realiza o concurso (prefeitura, tribunal, câmara); "banca" é quem organiza a prova
 
 Edital:
 {texto}"""
@@ -107,22 +117,44 @@ def extrair_campos(filepath: str) -> dict:
         filepath: caminho para o arquivo PDF do edital.
 
     Returns:
-        Dicionário com cidade_estado, data_prova, periodo_inscricao e lista de cargos.
+        Dicionário com todos os campos extraídos.
         Retorna estrutura vazia em caso de falha.
     """
     texto = extrair_texto(filepath)
     trecho = _montar_trecho(texto)
     prompt = _PROMPT_TEMPLATE.format(texto=trecho)
 
-    resultado = extrair_json(prompt)
+    resultado = extrair_json(prompt, max_tokens=3000)
 
     if not resultado:
-        return {"cidade_estado": None, "data_prova": None, "periodo_inscricao": None, "cargos": []}
+        return {
+            "municipio": None,
+            "uf": None,
+            "orgao": None,
+            "banca": None,
+            "data_prova": None,
+            "data_prova_iso": None,
+            "inscricao_inicio": None,
+            "inscricao_inicio_iso": None,
+            "inscricao_fim": None,
+            "inscricao_fim_iso": None,
+            "cargos": [],
+        }
 
     resultado.setdefault("cargos", [])
-    resultado.setdefault("cidade_estado", None)
-    resultado.setdefault("data_prova", None)
-    resultado.setdefault("periodo_inscricao", None)
+    for key in (
+        "municipio",
+        "uf",
+        "orgao",
+        "banca",
+        "data_prova",
+        "data_prova_iso",
+        "inscricao_inicio",
+        "inscricao_inicio_iso",
+        "inscricao_fim",
+        "inscricao_fim_iso",
+    ):
+        resultado.setdefault(key, None)
 
     return resultado
 
@@ -133,15 +165,25 @@ if __name__ == "__main__":
         sys.exit(1)
 
     campos = extrair_campos(sys.argv[1])
-    print(f"{'cidade_estado':20s}: {campos.get('cidade_estado') or '(não encontrado)'}")
+    municipio = campos.get("municipio") or ""
+    uf = campos.get("uf") or ""
+    cidade_estado = f"{municipio}/{uf}" if municipio and uf else "(não encontrado)"
+    print(f"{'cidade_estado':20s}: {cidade_estado}")
+    print(f"{'orgao':20s}: {campos.get('orgao') or '(não encontrado)'}")
+    print(f"{'banca':20s}: {campos.get('banca') or '(não encontrado)'}")
     print(f"{'data_prova':20s}: {campos.get('data_prova') or '(não encontrado)'}")
-    print(f"{'periodo_inscricao':20s}: {campos.get('periodo_inscricao') or '(não encontrado)'}")
+    inscricao = (
+        f"{campos.get('inscricao_inicio')} a {campos.get('inscricao_fim')}"
+        if campos.get("inscricao_inicio")
+        else "(não encontrado)"
+    )
+    print(f"{'inscricao':20s}: {inscricao}")
     print()
     for cargo in campos.get("cargos", []):
         print(f"  Cargo     : {cargo.get('nome')}")
         print(f"  Área      : {cargo.get('area') or '—'}")
-        print(f"  Salário   : {cargo.get('salario') or '—'}")
-        print(f"  Vagas     : {cargo.get('vagas') or '—'}")
+        print(f"  Salário   : {cargo.get('salario') or '—'} ({cargo.get('salario_valor') or '—'})")
+        print(f"  Vagas     : {cargo.get('vagas') or '—'} ({cargo.get('vagas_numero') or '—'})")
         print(f"  Escolar.  : {cargo.get('escolaridade') or '—'}")
         print(f"  Benefícios: {cargo.get('beneficios') or '—'}")
         print()
