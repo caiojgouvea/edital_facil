@@ -42,7 +42,10 @@ Estrutura esperada:
 }}
 
 Regras:
-- Se um cargo tiver múltiplas áreas de habilitação, crie um item por área
+- Crie um item separado por área SOMENTE quando cada área tiver quantidade de vagas própria e \
+distinta (ex: Administração 2 vagas, Direito 5 vagas → itens separados). Se diferentes formações \
+concorrem às mesmas vagas (ex: "1 vaga para Direito ou Administração"), crie UM único item com \
+todas as formações aceitas em "escolaridade" e "area" como null
 - Use null (não string vazia) quando não encontrar a informação
 - Para vagas, inclua CR no campo "vagas" quando houver cadastro de reserva (ex: "5 + CR"), \
 mas em "vagas_numero" coloque apenas o número inteiro

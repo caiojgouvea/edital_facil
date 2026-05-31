@@ -79,7 +79,7 @@
     }
 
     function renderCargoGroup(nome, cargos) {
-      const temAreas = cargos.length > 1 || cargos.some(c => c.area);
+      const temAreas = cargos.length > 1;
       const primeiro = cargos[0];
       const beneficios = primeiro.beneficios
         ? primeiro.beneficios.split("\n").map(b => `<li>${b}</li>`).join("")
@@ -99,10 +99,13 @@
         </div>`;
 
       if (!temAreas) {
-        return `
+        const areaBadge = primeiro.area
+        ? `<span class="badge bg-secondary ms-2">${primeiro.area}</span>`
+        : "";
+      return `
           <div class="card shadow-sm mb-3 cargo-card">
             <div class="card-body">
-              <h6 class="fw-bold mb-3">${val(nome)}</h6>
+              <h6 class="fw-bold mb-3">${val(nome)}${areaBadge}</h6>
               <div class="row g-3">
                 <div class="col-sm-4">
                   <div class="field-label">Salário</div>
