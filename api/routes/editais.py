@@ -48,6 +48,7 @@ def upload():
 
     # TODO: substituir por task Celery quando fila estiver configurada
     from api.services.edital_service import processar_edital
+
     processar_edital(edital.id, filepath)
 
     return jsonify({"job_id": edital.id, "status": edital.status}), 202

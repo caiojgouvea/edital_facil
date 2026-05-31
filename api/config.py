@@ -7,6 +7,7 @@ load_dotenv()
 
 class Config:
     """Configurações base compartilhadas por todos os ambientes."""
+
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-key")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "..", "uploads")
@@ -24,6 +25,7 @@ class Config:
 
 class DevelopmentConfig(Config):
     """Configurações de desenvolvimento com SQLite local."""
+
     DEBUG = True
     _base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     SQLALCHEMY_DATABASE_URI = os.getenv(
@@ -34,6 +36,7 @@ class DevelopmentConfig(Config):
 
 class ProductionConfig(Config):
     """Configurações de produção — DATABASE_URL obrigatória via variável de ambiente."""
+
     DEBUG = False
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL")
 

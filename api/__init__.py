@@ -25,6 +25,7 @@ def create_app(env: str | None = None) -> Flask:
     db.init_app(app)
 
     from .routes.editais import bp as editais_bp
+
     app.register_blueprint(editais_bp)
 
     return app
