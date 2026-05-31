@@ -244,6 +244,23 @@ chore: atualizar pdfplumber para 0.11.5
 
 ---
 
+## CI/CD
+
+### GitHub Actions
+
+Workflow em `.github/workflows/lint.yml` — roda em todo push e PR para `master`.
+
+**Jobs:**
+- `ruff check .` — verifica violações de lint
+- `ruff format --check .` — verifica formatação
+
+Usa `astral-sh/ruff-action@v3` (sem instalar dependências Python, execução rápida).
+Node.js 24 habilitado via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true`.
+
+**Regra:** o pipeline deve estar verde antes de qualquer merge. Nunca fazer push com `ruff` falhando localmente.
+
+---
+
 ## O que não foi decidido ainda
 
 - Modelo de precificação / multi-tenancy
