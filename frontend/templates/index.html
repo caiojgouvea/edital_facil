@@ -39,10 +39,18 @@
               <div class="field-value" id="info-cidade">—</div>
             </div>
             <div class="col-sm-4">
+              <div class="field-label">Órgão</div>
+              <div class="field-value" id="info-orgao">—</div>
+            </div>
+            <div class="col-sm-4">
+              <div class="field-label">Banca</div>
+              <div class="field-value" id="info-banca">—</div>
+            </div>
+            <div class="col-sm-4">
               <div class="field-label">Data da prova</div>
               <div class="field-value" id="info-data-prova">—</div>
             </div>
-            <div class="col-sm-4">
+            <div class="col-sm-8">
               <div class="field-label">Período de inscrição</div>
               <div class="field-value" id="info-periodo">—</div>
             </div>
@@ -114,6 +122,8 @@
         const edital = await resultRes.json();
 
         document.getElementById("info-cidade").textContent = val(edital.cidade_estado);
+        document.getElementById("info-orgao").textContent = val(edital.orgao);
+        document.getElementById("info-banca").textContent = val(edital.banca);
         document.getElementById("info-data-prova").textContent = val(edital.data_prova);
         document.getElementById("info-periodo").textContent = val(edital.periodo_inscricao);
 
