@@ -8,7 +8,58 @@ import sys
 
 import pdfplumber
 
-from api.services.llm import completar as _completar_llm
+from api.services.llm import extrair_json
+
+_PROMPT_TEMPLATE = """Você é um extrator de dados de editais de concurso público brasileiro.
+
+Extraia as informações abaixo do edital e retorne SOMENTE um JSON válido, sem markdown, sem
+explicações.
+
+Estrutura esperada:
+{{
+  "cidade_estado": "Cidade/UF ou null",
+  "data_prova": "DD/MM/AAAA ou null",
+  "periodo_inscricao": "DD/MM/AAAA a DD/MM/AAAA ou null",
+  "cargos": [
+    {{
+      "nome": "nome do cargo",
+      "area": "área de habilitação ou null",
+      "salario": "R$ valor ou null",
+      "vagas": "número + CR ou somente número ou null",
+      "escolaridade": "nível exigido ou null",
+      "beneficios": "um benefício por linha no formato Nome: R$ valor, ou null"
+    }}
+  ]
+}}
+
+Regras:
+- Se um cargo tiver múltiplas áreas de habilitação, crie um item por área
+- Use null (não string vazia) quando não encontrar a informação
+- Para vagas, inclua CR quando houver cadastro de reserva (ex: "5 + CR")
+- Para salário, procure por: "vencimento", "vencimento inicial", "remuneração", "subsídio" seguido \
+de valor em reais. Formate sempre como "R$ X.XXX,XX"
+- Para escolaridade, procure por: "ensino superior", "ensino médio", "graduação em", "diploma de", \
+"bacharel em", "nível superior". Inclua a área quando especificada
+- Para benefícios, liste um por linha: auxílio-alimentação, auxílio-saúde, vale-transporte, etc.
+- Se o salário for igual para todas as áreas de habilitação de um cargo, repita-o em cada item
+- cidade_estado no formato "Cidade/UF" (ex: "Florianópolis/SC")
+
+Edital:
+{texto}"""
+
+
+# Padrões para localizar seções relevantes espalhadas pelo documento
+_SECOES_CHAVE = [
+    r"remuner[aã]",
+    r"vencimento\s+(?:inicial|b[aá]sico)",
+    r"per[ií]odo\s+de\s+inscri",
+    r"aplica[çc][ãa]o\s+das?\s+provas?",
+    r"PROCEDIMENTOS\s+DATAS",
+    r"cronograma\s+de\s+execu",
+    r"dos?\s+benef[ií]cios?",
+    r"requisitos?\s+(?:do\s+cargo|para\s+(?:investidura|o\s+cargo))",
+    r"anexo\s+ii",
+]
 
 
 def extrair_texto(filepath: str) -> str:
@@ -25,211 +76,55 @@ def extrair_texto(filepath: str) -> str:
     return "\n".join(paginas)
 
 
-def _buscar(padrao: str, texto: str, flags: int = re.IGNORECASE) -> str | None:
-    match = re.search(padrao, texto, flags)
-    return match.group(1).strip() if match else None
+def _montar_trecho(texto: str) -> str:
+    """Seleciona as partes mais relevantes do texto para enviar ao LLM.
 
-
-def _encontrar_linhas_cargos(pdf) -> list[dict]:
-    """Localiza e parseia a tabela principal de cargos do edital.
-
-    Returns:
-        Lista de dicts com cargo, escolaridade, vagas e salario. Vazia se não encontrada.
+    Sempre inclui o início do edital (cargo, vagas, requisitos básicos) e
+    busca ativamente seções-chave ao longo do documento inteiro — salário,
+    cronograma, benefícios — para incluí-las mesmo que estejam no final.
     """
-    for page in pdf.pages:
-        for table in page.extract_tables():
-            if not table:
+    secoes: list[str] = [texto[:30000]]
+    vistos: set[int] = set()
+
+    for padrao in _SECOES_CHAVE:
+        for match in re.finditer(padrao, texto, re.IGNORECASE):
+            # Bloco de 2500 chars centrado no match; evita sobreposição com início
+            inicio = max(30000, match.start() - 200)
+            # Arredonda para bloco de 1000 para evitar duplicatas próximas
+            chave = inicio // 1000
+            if chave in vistos:
                 continue
-            header = " ".join(str(c or "") for c in table[0]).lower()
-            if "cargo" in header and ("vencimento" in header or "escolaridade" in header):
-                linhas = []
-                for row in table:
-                    if len(row) < 9:
-                        continue
-                    codigo = str(row[0] or "").strip()
-                    if not codigo.isdigit():
-                        continue
-                    vagas = str(row[4] or row[5] or "").replace("\n", " ").strip()
-                    salario = str(row[8] or "").split("\n")[0].strip()
-                    linhas.append(
-                        {
-                            "cargo": str(row[2] or "").replace("\n", " ").strip(),
-                            "escolaridade": str(row[3] or "").replace("\n", " ").strip(),
-                            "vagas": vagas,
-                            "salario": salario,
-                        }
-                    )
-                if linhas:
-                    return linhas
-    return []
+            vistos.add(chave)
+            secoes.append(texto[inicio : inicio + 2500])
 
-
-def _encontrar_texto_cronograma(pdf) -> str:
-    """Extrai o texto das páginas que compõem o cronograma de execução.
-
-    Returns:
-        Texto concatenado das páginas do cronograma. Vazio se não encontrado.
-    """
-    textos = []
-    collecting = False
-    for page in pdf.pages:
-        texto = page.extract_text() or ""
-        if re.search(r"PROCEDIMENTOS\s+DATAS", texto, re.IGNORECASE):
-            collecting = True
-        if collecting:
-            textos.append(texto)
-            if len(textos) >= 4:
-                break
-    return "\n".join(textos)
+    return "\n\n[...]\n\n".join(secoes)
 
 
 def extrair_campos(filepath: str) -> dict:
-    """Extrai os campos estruturados de um edital de concurso público.
+    """Extrai os campos estruturados de um edital de concurso público via LLM.
 
     Args:
         filepath: caminho para o arquivo PDF do edital.
 
     Returns:
-        Dicionário com os campos extraídos. Valor None quando não encontrado.
+        Dicionário com cidade_estado, data_prova, periodo_inscricao e lista de cargos.
+        Retorna estrutura vazia em caso de falha.
     """
-    with pdfplumber.open(filepath) as pdf:
-        texto = "\n".join(page.extract_text() or "" for page in pdf.pages)
-        linhas_cargos = _encontrar_linhas_cargos(pdf)
-        texto_cronograma = _encontrar_texto_cronograma(pdf)
+    texto = extrair_texto(filepath)
+    trecho = _montar_trecho(texto)
+    prompt = _PROMPT_TEMPLATE.format(texto=trecho)
 
-    return {
-        "cargos": _extrair_cargos(linhas_cargos, texto),
-        "salarios": _extrair_salarios(linhas_cargos, texto),
-        "escolaridade": _extrair_escolaridade(linhas_cargos, texto),
-        "vagas": _extrair_vagas(linhas_cargos, texto),
-        "cidade_estado": _extrair_cidade_estado(texto),
-        "data_prova": _extrair_data_prova(texto_cronograma, texto),
-        "periodo_inscricao": _extrair_periodo_inscricao(texto_cronograma, texto),
-        "beneficios": _extrair_beneficios_llm(texto),
-    }
+    resultado = extrair_json(prompt)
 
-
-def _extrair_cargos(linhas: list[dict], texto: str) -> str | None:
-    if linhas:
-        nomes = [linha["cargo"] for linha in linhas if linha["cargo"]]
-        return ", ".join(nomes) if nomes else None
-    return _buscar(r"cargo[s]?\s*[:\-–]\s*(.+)", texto)
-
-
-def _extrair_salarios(linhas: list[dict], texto: str) -> str | None:
-    if linhas:
-        salarios = [linha["salario"] for linha in linhas if linha["salario"]]
-        return ", ".join(salarios) if salarios else None
-    resultado = _buscar(r"vencimento[s]?\s*[:\-–]?\s*(R\$\s*[\d.,]+)", texto)
     if not resultado:
-        resultado = _buscar(r"sal[aá]rio[s]?\s*[:\-–]?\s*(R\$\s*[\d.,]+)", texto)
+        return {"cidade_estado": None, "data_prova": None, "periodo_inscricao": None, "cargos": []}
+
+    resultado.setdefault("cargos", [])
+    resultado.setdefault("cidade_estado", None)
+    resultado.setdefault("data_prova", None)
+    resultado.setdefault("periodo_inscricao", None)
+
     return resultado
-
-
-def _extrair_escolaridade(linhas: list[dict], texto: str) -> str | None:
-    if linhas:
-        vistos: set[str] = set()
-        niveis = []
-        for linha in linhas:
-            esc = linha["escolaridade"]
-            nivel_match = re.match(r"(Ensino\s+\S+\s+\S+)", esc, re.IGNORECASE)
-            nivel = nivel_match.group(1).rstrip(".,;:") if nivel_match else esc.split(".")[0]
-            if nivel and nivel not in vistos:
-                vistos.add(nivel)
-                niveis.append(nivel)
-        return "; ".join(niveis) if niveis else None
-    for padrao in [
-        r"escolaridade\s*[:\-–]\s*(.+)",
-        r"nível\s+de\s+escolaridade\s*[:\-–]\s*(.+)",
-        r"requisito[s]?\s*[:\-–]\s*(.+)",
-    ]:
-        resultado = _buscar(padrao, texto)
-        if resultado:
-            return resultado
-    return None
-
-
-def _extrair_vagas(linhas: list[dict], texto: str) -> str | None:
-    if linhas:
-        entradas = [f"{linha['cargo']}: {linha['vagas']}" for linha in linhas if linha["vagas"]]
-        return ", ".join(entradas) if entradas else None
-    return _buscar(r"(\d+)\s*(?:vaga[s]?|vagas)", texto)
-
-
-def _extrair_cidade_estado(texto: str) -> str | None:
-    cidade_pat = r"[A-ZÀ-Ú][a-zà-úÀ-ÿ]+(?:\s+[A-ZÀ-Ú][a-zà-úÀ-ÿ]+)*"
-    # Prefer pattern with explicit UF slash (e.g. "Municipal de Palhoça/SC")
-    for prefixo in (r"[Mm]unicip(?:al|io|ío)\s+de", r"prefeitura\s+(?:municipal\s+)?de"):
-        match = re.search(rf"{prefixo}\s+({cidade_pat})/([A-Z]{{2}})\b", texto, re.IGNORECASE)
-        if match:
-            return f"{match.group(1).strip()}/{match.group(2)}"
-    # Fallback: without UF
-    match = re.search(
-        rf"[Mm]unicip(?:al|io|ío)\s+de\s+({cidade_pat})",
-        texto,
-        re.IGNORECASE,
-    )
-    return match.group(1).strip() if match else None
-
-
-def _extrair_data_prova(texto_cronograma: str, texto: str) -> str | None:
-    padroes = [
-        r"[Aa]plica[çc][ãa]o\s+das?\s+[Pp]rovas?\s+[Tt]e[oó]rico.+?(\d{1,2}/\d{2}/\d{4})",
-        r"realiza[çc][ãa]o\s+das?\s+provas?\s+te[oó]rico.objetivas?\s+(\d{1,2}/\d{2}/\d{4})",
-        r"data\s+das?\s+provas?\s*[:\-–]\s*(\d{1,2}/\d{2}/\d{4})",
-        r"prova\s+objetiva\s*[:\-–]\s*(\d{1,2}/\d{1,2}/\d{4})",
-        r"realiza[çc][ãa]o\s+da\s+prova\s*[:\-–]\s*(\d{1,2}/\d{1,2}/\d{4})",
-    ]
-    for fonte in (texto_cronograma, texto):
-        for padrao in padroes:
-            resultado = _buscar(padrao, fonte, re.IGNORECASE | re.DOTALL)
-            if resultado:
-                return resultado
-    return None
-
-
-def _extrair_periodo_inscricao(texto_cronograma: str, texto: str) -> str | None:
-    padrao = (
-        r"per[ií]odo\s+de\s+inscri[çc][õo]es?\b.{0,120}?"
-        r"(\d{1,2}/\d{1,2}(?:/\d{4})?)\s+a\s+(\d{1,2}/\d{1,2}(?:/\d{4})?)"
-    )
-    for fonte in (texto_cronograma, texto):
-        match = re.search(padrao, fonte, re.IGNORECASE | re.DOTALL)
-        if match:
-            return f"{match.group(1)} a {match.group(2)}"
-    return None
-
-
-def _extrair_beneficios_llm(texto: str) -> str | None:
-    """Extrai benefícios salariais usando LLM configurado via LiteLLM.
-
-    Localiza a seção de benefícios no texto do edital e envia ao modelo
-    para extração estruturada. Retorna None se o LLM não estiver configurado.
-
-    Returns:
-        Lista de benefícios formatada (um por linha), ou None.
-    """
-    match = re.search(r"benef[íi]cios?\b", texto, re.IGNORECASE)
-    if not match:
-        return None
-
-    trecho = texto[match.start() : match.start() + 1500]
-
-    prompt = (
-        "Você é um extrator de dados de editais de concurso público brasileiro.\n"
-        "Do trecho abaixo, liste apenas os benefícios financeiros oferecidos "
-        "(como auxílio-alimentação, auxílio-saúde, vale-transporte, etc.) com seus valores.\n"
-        "Use o formato exato — uma linha por benefício:\n"
-        "Nome do benefício: R$ valor\n"
-        "Responda SOMENTE com a lista, sem explicações. "
-        "Se não houver benefícios com valores listados, responda apenas: nenhum\n\n"
-        f"Trecho do edital:\n{trecho}"
-    )
-
-    resultado = _completar_llm(prompt, max_tokens=256)
-    if not resultado or resultado.strip().lower() == "nenhum":
-        return None
-    return resultado.strip()
 
 
 if __name__ == "__main__":
@@ -238,5 +133,15 @@ if __name__ == "__main__":
         sys.exit(1)
 
     campos = extrair_campos(sys.argv[1])
-    for campo, valor in campos.items():
-        print(f"{campo:20s}: {valor or '(não encontrado)'}")
+    print(f"{'cidade_estado':20s}: {campos.get('cidade_estado') or '(não encontrado)'}")
+    print(f"{'data_prova':20s}: {campos.get('data_prova') or '(não encontrado)'}")
+    print(f"{'periodo_inscricao':20s}: {campos.get('periodo_inscricao') or '(não encontrado)'}")
+    print()
+    for cargo in campos.get("cargos", []):
+        print(f"  Cargo     : {cargo.get('nome')}")
+        print(f"  Área      : {cargo.get('area') or '—'}")
+        print(f"  Salário   : {cargo.get('salario') or '—'}")
+        print(f"  Vagas     : {cargo.get('vagas') or '—'}")
+        print(f"  Escolar.  : {cargo.get('escolaridade') or '—'}")
+        print(f"  Benefícios: {cargo.get('beneficios') or '—'}")
+        print()

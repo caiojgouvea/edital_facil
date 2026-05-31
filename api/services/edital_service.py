@@ -1,6 +1,6 @@
 from api import db
 from api.extractors.pdf_extractor import extrair_campos
-from api.models import Edital
+from api.models import Cargo, Edital
 
 
 def processar_edital(edital_id: int, filepath: str) -> None:
@@ -16,14 +16,23 @@ def processar_edital(edital_id: int, filepath: str) -> None:
 
     try:
         campos = extrair_campos(filepath)
-        edital.cargos = campos.get("cargos")
-        edital.salarios = campos.get("salarios")
-        edital.escolaridade = campos.get("escolaridade")
-        edital.vagas = campos.get("vagas")
+
         edital.cidade_estado = campos.get("cidade_estado")
         edital.data_prova = campos.get("data_prova")
         edital.periodo_inscricao = campos.get("periodo_inscricao")
-        edital.beneficios = campos.get("beneficios")
+
+        for dado in campos.get("cargos", []):
+            cargo = Cargo(
+                edital_id=edital.id,
+                nome=dado.get("nome") or "",
+                area=dado.get("area"),
+                salario=dado.get("salario"),
+                vagas=dado.get("vagas"),
+                escolaridade=dado.get("escolaridade"),
+                beneficios=dado.get("beneficios"),
+            )
+            db.session.add(cargo)
+
         edital.status = "done"
     except Exception as exc:
         edital.status = "error"

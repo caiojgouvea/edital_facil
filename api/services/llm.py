@@ -6,8 +6,10 @@ Para trocar de provedor, basta alterar duas variáveis no .env:
   - Google:    LLM_MODEL=gemini/gemini-1.5-flash    + GEMINI_API_KEY
 """
 
+import json
 import logging
 import os
+import re
 
 import litellm
 
@@ -41,3 +43,37 @@ def completar(prompt: str, max_tokens: int = 512) -> str | None:
         return response.choices[0].message.content
     except Exception:
         return None
+
+
+def extrair_json(prompt: str, max_tokens: int = 2048) -> dict | None:
+    """Envia um prompt e retorna a resposta parseada como dicionário JSON.
+
+    Tenta parsear o JSON diretamente; se falhar, busca o primeiro bloco
+    JSON válido dentro da resposta.
+
+    Args:
+        prompt: texto do prompt a enviar.
+        max_tokens: limite de tokens na resposta.
+
+    Returns:
+        Dicionário com os dados extraídos, ou None em caso de falha.
+    """
+    resposta = completar(prompt, max_tokens=max_tokens)
+    if not resposta:
+        return None
+
+    texto = resposta.strip()
+
+    try:
+        return json.loads(texto)
+    except json.JSONDecodeError:
+        pass
+
+    match = re.search(r"\{.*\}", texto, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+
+    return None
