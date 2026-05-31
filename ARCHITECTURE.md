@@ -68,7 +68,7 @@ Escolhido em detrimento de microsserviços: evita complexidade operacional prema
 
 ### Extração de PDF
 - **pdfplumber** — escolhido sobre PyPDF2/pymupdf por preservar layout, extrair tabelas nativamente e ter manutenção ativa
-- **LLM (fallback)** — para editais com estrutura não-padrão onde regex falha
+- **LLM (Anthropic Claude via LiteLLM)** — extração 100% via LLM; cada órgão publica o edital em formato diferente, tornando regex/tabelas inviáveis para cobertura geral
 
 ### Frontend
 - **HTML + Bootstrap** no MVP
@@ -87,7 +87,7 @@ Escolhido em detrimento de microsserviços: evita complexidade operacional prema
 1. Usuário faz upload do PDF
 2. API salva arquivo no MinIO → retorna job_id + status "processing"
 3. API enfileira task no Celery via Redis
-4. Worker processa: pdfplumber → regex → LLM (se fallback necessário)
+4. Worker processa: pdfplumber extrai texto → LLM estrutura os dados
 5. Worker salva resultado estruturado no PostgreSQL
 6. Frontend faz polling em GET /editais/{job_id}/status
 7. Quando status = "done", exibe resumo estruturado
@@ -135,16 +135,17 @@ edital_facil/
 │   │   └── users.py
 │   ├── services/
 │   │   ├── edital_service.py
+│   │   ├── llm.py                  # cliente LiteLLM (provider-agnostic)
 │   │   ├── storage_service.py
 │   │   └── auth_service.py
 │   ├── workers/
 │   │   └── tasks.py            # Celery tasks
 │   ├── models/
 │   │   ├── edital.py
+│   │   ├── cargo.py                # um registro por cargo/habilitação
 │   │   └── user.py
 │   └── extractors/
-│       ├── pdf_extractor.py    # pdfplumber + regex
-│       └── llm_extractor.py   # fallback LLM
+│       └── pdf_extractor.py    # pdfplumber (texto) + LLM (estruturação)
 ├── frontend/
 ├── migrations/                 # Alembic
 ├── tests/
@@ -265,5 +266,4 @@ Node.js 24 habilitado via `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true`.
 
 - Modelo de precificação / multi-tenancy
 - Autenticação social (Google OAuth) vs email/senha
-- Modelo de LLM para fallback (GPT-4o, Claude, Gemini)
 - Estratégia de retry para processamento com falha

@@ -46,7 +46,7 @@ O CI valida automaticamente em todo push para `master`. Consulte [ARCHITECTURE.m
 ## Stack
 
 - **Backend**: Python 3.12 + Flask
-- **Extração de PDF**: pdfplumber
+- **Extração de PDF**: pdfplumber + LLM (Anthropic Claude via LiteLLM)
 - **Banco**: SQLite (dev) / PostgreSQL (prod)
 - **Fila**: Celery + Redis
 - **Storage**: MinIO (dev) / S3 (prod)
