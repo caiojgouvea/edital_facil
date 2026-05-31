@@ -8,6 +8,8 @@ import sys
 
 import pdfplumber
 
+from api.services.llm import completar as _completar_llm
+
 
 def extrair_texto(filepath: str) -> str:
     """Extrai o texto bruto de todas as páginas do PDF.
@@ -103,6 +105,7 @@ def extrair_campos(filepath: str) -> dict:
         "cidade_estado": _extrair_cidade_estado(texto),
         "data_prova": _extrair_data_prova(texto_cronograma, texto),
         "periodo_inscricao": _extrair_periodo_inscricao(texto_cronograma, texto),
+        "beneficios": _extrair_beneficios_llm(texto),
     }
 
 
@@ -195,6 +198,38 @@ def _extrair_periodo_inscricao(texto_cronograma: str, texto: str) -> str | None:
         if match:
             return f"{match.group(1)} a {match.group(2)}"
     return None
+
+
+def _extrair_beneficios_llm(texto: str) -> str | None:
+    """Extrai benefícios salariais usando LLM configurado via LiteLLM.
+
+    Localiza a seção de benefícios no texto do edital e envia ao modelo
+    para extração estruturada. Retorna None se o LLM não estiver configurado.
+
+    Returns:
+        Lista de benefícios formatada (um por linha), ou None.
+    """
+    match = re.search(r"benef[íi]cios?\b", texto, re.IGNORECASE)
+    if not match:
+        return None
+
+    trecho = texto[match.start() : match.start() + 1500]
+
+    prompt = (
+        "Você é um extrator de dados de editais de concurso público brasileiro.\n"
+        "Do trecho abaixo, liste apenas os benefícios financeiros oferecidos "
+        "(como auxílio-alimentação, auxílio-saúde, vale-transporte, etc.) com seus valores.\n"
+        "Use o formato exato — uma linha por benefício:\n"
+        "Nome do benefício: R$ valor\n"
+        "Responda SOMENTE com a lista, sem explicações. "
+        "Se não houver benefícios com valores listados, responda apenas: nenhum\n\n"
+        f"Trecho do edital:\n{trecho}"
+    )
+
+    resultado = _completar_llm(prompt, max_tokens=256)
+    if not resultado or resultado.strip().lower() == "nenhum":
+        return None
+    return resultado.strip()
 
 
 if __name__ == "__main__":

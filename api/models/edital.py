@@ -20,6 +20,7 @@ class Edital(db.Model):
     cidade_estado = db.Column(db.Text)
     data_prova = db.Column(db.Text)
     periodo_inscricao = db.Column(db.Text)
+    beneficios = db.Column(db.Text)
 
     criado_em = db.Column(db.DateTime, default=lambda: datetime.now(UTC))
 
@@ -36,5 +37,6 @@ class Edital(db.Model):
             "cidade_estado": self.cidade_estado,
             "data_prova": self.data_prova,
             "periodo_inscricao": self.periodo_inscricao,
+            "beneficios": self.beneficios,
             "criado_em": self.criado_em.isoformat(),
         }

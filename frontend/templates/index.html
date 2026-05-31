@@ -37,6 +37,7 @@
     const LABELS = {
       cargos: "Cargo(s)",
       salarios: "Salário(s)",
+      beneficios: "Benefícios",
       escolaridade: "Escolaridade",
       vagas: "Vagas",
       cidade_estado: "Cidade / Estado",
@@ -67,7 +68,11 @@
         const tbody = document.getElementById("resultado-body");
         tbody.innerHTML = "";
         for (const [key, label] of Object.entries(LABELS)) {
-          const valor = edital[key] || "—";
+          const raw = edital[key];
+          let valor = "—";
+          if (raw) {
+            valor = raw.replace(/\n/g, "<br>");
+          }
           tbody.innerHTML += `<tr><th scope="row">${label}</th><td>${valor}</td></tr>`;
         }
 

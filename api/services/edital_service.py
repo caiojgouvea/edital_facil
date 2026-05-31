@@ -23,6 +23,7 @@ def processar_edital(edital_id: int, filepath: str) -> None:
         edital.cidade_estado = campos.get("cidade_estado")
         edital.data_prova = campos.get("data_prova")
         edital.periodo_inscricao = campos.get("periodo_inscricao")
+        edital.beneficios = campos.get("beneficios")
         edital.status = "done"
     except Exception as exc:
         edital.status = "error"
